@@ -42,7 +42,7 @@ class BlsCustomSearchAlgorithm(CustomSearchAlgorithm):
                                                                                   oversampling, star_info,
                                                                                   transits_min_count)
             lc = lightkurve.LightCurve(time=time, flux=flux)
-            results = lc.to_periodogram(method='bls', period=tls_period_grid, frequency_factor=oversampling)
+            results = lc.to_periodogram(method='bls', period=tls_period_grid, frequency_factor=oversampling * 100)
             max_power_index = np.argmax(results.power)
             sde = results.power[max_power_index].value / np.nanmedian(results.power).value
             t0 = results.transit_time_at_max_power.value
