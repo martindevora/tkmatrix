@@ -554,10 +554,12 @@ class MATRIX:
         fig, ax = plt.subplots(figsize=(2.7 * 5, 5))
         im = plt.imshow(normed_hist.T, origin='lower', extent=(x[0], x[-1], y[0], y[-1]), interpolation='none',
                         aspect='auto', cmap='viridis', vmin=0, vmax=100, rasterized=True)
-        plt.colorbar(im, label='Recovery rate (%)')
-        plt.xlabel('Injected period (days)')
-        plt.ylabel(r'Injected ' + 'radius' if not is_rv else 'mass' + ' (' + column_units + '$_\oplus$)')
-        ax.set_title(object_id + " - I&R (" + str(phases) + " " + phases_str + ")")
+        cbar = plt.colorbar(im)
+        cbar.set_label(label='Recovery rate (%)', size=16)
+        cbar.ax.tick_params(labelsize=14)
+        plt.xlabel('Injected period (days)', fontsize=18)
+        plt.ylabel(r'Injected ' + ('radius' if not is_rv else 'mass') + ' (' + column_units + '$_\oplus$)', fontsize=18)
+        ax.set_title(object_id + " - I&R (" + str(phases) + " " + phases_str + ")", fontsize=24)
         if xticks is not None:
             plt.xticks(xticks)
         else:
@@ -567,6 +569,7 @@ class MATRIX:
             ax.xaxis.set_major_formatter(FormatStrFormatter('%.' + str(period_ticks_decimals) + 'f'))
         if yticks is not None:
             plt.xticks(yticks)
+        ax.tick_params(axis='both', which='major', labelsize=14)
         plt.savefig(inject_dir + '/inj-rec' + ('-rv' if is_rv else '') + '.png', bbox_inches='tight', dpi=200)
         plt.close()
 
@@ -630,10 +633,12 @@ class MATRIX:
         fig, ax = plt.subplots(figsize=(2.7 * 5, 5))
         im = plt.imshow(normed_hist.T, origin='lower', extent=(x1[0], x1[-1], y1[0], y1[-1]), interpolation='none',
                         aspect='auto', cmap='viridis', vmin=-phases, vmax=phases, rasterized=True)
-        plt.colorbar(im, label='# Found samples diff.')
-        plt.xlabel('Injected period (days)')
-        plt.ylabel(r'Injected radius (R$_\oplus$)')
-        ax.set_title(object_id + " - P/R recovery diff(" + str(phases) + " " + phases_str + ")")
+        cbar = plt.colorbar(im)
+        cbar.set_label(label='# Found samples diff.', size=16)
+        cbar.ax.tick_params(labelsize=14)
+        plt.xlabel('Injected period (days)', fontsize=18)
+        plt.ylabel(r'Injected radius (R$_\oplus$)', fontsize=18)
+        ax.set_title(object_id + " - P/R recovery diff(" + str(phases) + " " + phases_str + ")", fontsize=24)
         if xticks is not None:
             plt.xticks(xticks)
         else:
@@ -643,6 +648,7 @@ class MATRIX:
             ax.xaxis.set_major_formatter(FormatStrFormatter('%.' + str(period_ticks_decimals) + 'f'))
         if yticks is not None:
             plt.xticks(yticks)
+        ax.tick_params(axis='both', which='major', labelsize=14)
         plt.savefig(output_dir + '/inj-rec-diff.png', bbox_inches='tight', dpi=200)
         plt.close()
 
