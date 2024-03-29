@@ -53,8 +53,7 @@ SIGNAL_SELECTION_MODE: 'period-epoch'
 # The SNR limit for a TLS found signal to be considered as not recovered.
 SNR_THRESHOLD: 5
 # The density of the period grid for the TLS search. Increasing this will enhance the TLS accuracy sometimes but it
-# adds a high increase of computational cost. When FIT_METHOD: bls-periodogram, OVERSAMPLING represents the
-# frequency_factor and hence, increasing it will reduce the period grid size (as opposite to the standard search).
+# adds a high increase of computational cost.
 OVERSAMPLING: 1
 # An array of time tuples to be masked in your curve. E.g: [[1401.25, 1401.60], [1415.2, 1416.0]]
 INITIAL_MASK:
