@@ -498,7 +498,7 @@ class MATRIX:
 
     @staticmethod
     def plot_results(object_id, inject_dir, period_grid=None, radius_grid=None, binning=1, xticks=None, yticks=None,
-                     period_grid_geom="lin", radius_grid_geom="lin", is_rv=False):
+                     period_grid_geom="lin", radius_grid_geom="lin", is_rv=False, planets_df=None):
         """
         Generates a heat map with the found/not found results for the period/radius grids
 
@@ -512,6 +512,7 @@ class MATRIX:
         :param period_grid_geom: [lin|log]
         :param radius_grid_geom: [lin|log]
         :param is_rv: whether to load the rv results or the photometry ones
+        :param planets_df: pandas dataframe with radius, period, name, radius_err_up, radius_err_bottom
         """
         filename = '/a_tls_report.csv' if not is_rv else '/a_rv_report.csv'
         column = 'radius' if not is_rv else 'mass'
@@ -570,6 +571,11 @@ class MATRIX:
         if yticks is not None:
             plt.xticks(yticks)
         ax.tick_params(axis='both', which='major', labelsize=14)
+        if planets_df is not None:
+            for index, row in planets_df.iterrows():
+                ax.errorbar([row['period']], [row['radius']],
+                            yerr=[np.full(1, row['radius_err_bottom']), np.full(1, row['radius_err_up'])],
+                            fmt='o', color='firebrick', markersize=12)
         plt.savefig(inject_dir + '/inj-rec' + ('-rv' if is_rv else '') + '.png', bbox_inches='tight', dpi=200)
         plt.close()
 
