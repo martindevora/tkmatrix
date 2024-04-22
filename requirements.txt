@@ -90,7 +90,7 @@ statsmodels==0.13.5
 sympy==1.12
 tess-point==0.6.1
 threadpoolctl==3.4.0
-tkmatrix==0.8.6
+tkmatrix==0.8.7
 tomli==2.0.1
 torch==2.1.2
 tornado==6.4
