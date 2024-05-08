@@ -25,7 +25,7 @@ setuptools.setup(
                         'configparser==5.0.1',
                         "corner==2.1.0",
                         "ellc==1.8.5",
-                        "lcbuilder==0.16.2",
+                        "lcbuilder==0.18.0",
                         "mock==4.0.3",
                         'pyparsing==2.4.7', # Matplotlib dependency
                         "seaborn==0.11.1",
