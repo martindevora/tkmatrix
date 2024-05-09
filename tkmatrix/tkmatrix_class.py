@@ -497,8 +497,7 @@ class MATRIX:
                     os.remove(inject_dir + file)
 
     @staticmethod
-    def plot_results(object_id, inject_dir, period_grid=None, radius_grid=None, binning=1, xticks=None, yticks=None,
-                     period_grid_geom="lin", radius_grid_geom="lin", is_rv=False, planets_df=None):
+    def plot_results(object_id, inject_dir, binning=1, xticks=None, yticks=None, is_rv=False, planets_df=None):
         """
         Generates a heat map with the found/not found results for the period/radius grids
 
@@ -509,8 +508,6 @@ class MATRIX:
         :param binning: the binning to be applied to the grids
         :param xticks: the fixed ticks to be used for the period grid
         :param yticks: the fixed ticks to be used for the radius grid
-        :param period_grid_geom: [lin|log]
-        :param radius_grid_geom: [lin|log]
         :param is_rv: whether to load the rv results or the photometry ones
         :param planets_df: pandas dataframe with radius, period, name, radius_err_up, radius_err_bottom
         """
@@ -521,33 +518,10 @@ class MATRIX:
                          usecols=['period', column, 'found', 'sde'])
         min_period = df["period"].min()
         max_period = df["period"].max()
-        min_rad = df[column].min()
-        max_rad = df[column].max()
         phases = len(df[df["period"] == df["period"].min()][df[column] == df[column].min()])
         phases_str = "phase" if phases == 1 else "phases"
-        bin_nums = int(np.ceil(len(df["period"].unique()) / binning))
-        if period_grid is None:
-            if period_grid_geom == 'lin':
-                step_period = (max_period - min_period) / (len(df["period"].unique()) - 1)
-                step_period = step_period * binning
-                if step_period <= 0:
-                    step_period = 0.1
-                period_grid = np.linspace(min_period, max_period, bin_nums)\
-                    if max_period - min_period > 0 else np.full((1), min_period)
-            else:
-                period_grid = np.logspace(np.log10(min_period), np.log10(max_period), bin_nums)
-        if radius_grid is None:
-            bin_nums = int(np.ceil(len(df[column].unique()) / binning))
-            if radius_grid_geom == 'lin':
-                step_radius = (max_rad - min_rad) / (len(df[column].unique()) - 1)
-                step_radius = step_radius * binning
-                if step_radius <= 0:
-                    step_radius = 0.1
-                radius_grid = np.round(np.linspace(min_rad, max_rad, bin_nums), 2)\
-                    if max_rad - min_rad > 0 else np.full((1), min_rad)
-            else:
-                radius_grid = np.round(np.logspace(np.log10(min_rad), np.log10(max_rad), 2), bin_nums)
-        f = len(period_grid) / len(radius_grid)
+        period_grid = df['period'].unique()
+        radius_grid = df[column].unique()
         bins = [period_grid, radius_grid]
         h1, x, y = np.histogram2d(df['period'][df['found'] == 1], df[column][df['found'] == 1], bins=bins)
         h2, x, y = np.histogram2d(df['period'][df['found'] == 0], df[column][df['found'] == 0], bins=bins)
@@ -573,15 +547,14 @@ class MATRIX:
         ax.tick_params(axis='both', which='major', labelsize=14)
         if planets_df is not None:
             for index, row in planets_df.iterrows():
-                ax.errorbar([row['period']], [row['radius']],
-                            yerr=[np.full(1, row['radius_err_bottom']), np.full(1, row['radius_err_up'])],
+                ax.errorbar([row['period']], [row[column]],
+                            yerr=[np.full(1, row[column + '_err_bottom']), np.full(1, row[column + '_err_up'])],
                             fmt='o', color='firebrick', markersize=12)
         plt.savefig(inject_dir + '/inj-rec' + ('-rv' if is_rv else '') + '.png', bbox_inches='tight', dpi=200)
         plt.close()
 
     @staticmethod
-    def plot_diff(object_id, inject_dir1, inject_dir2, output_dir, binning=1, xticks=None, yticks=None,
-                  period_grid_geom="lin", radius_grid_geom="lin"):
+    def plot_diff(object_id, inject_dir1, inject_dir2, output_dir, binning=1, xticks=None, yticks=None):
         """
         Plots the difference between two results directories.
 
@@ -592,8 +565,6 @@ class MATRIX:
         :param binning: the binning to be applied to both axes
         :param xticks: the fixed ticks for the period bar
         :param yticks: the fixed ticks for the radius bar
-        :param period_grid_geom: [lin|log]
-        :param radius_grid_geom: [ling|log]
         """
         df1 = pd.read_csv(inject_dir1 + '/a_tls_report.csv', float_precision='round_trip', sep=',',
                          usecols=['period', 'radius', 'found', 'sde'])
@@ -601,31 +572,10 @@ class MATRIX:
                          usecols=['period', 'radius', 'found', 'sde'])
         min_period = df1["period"].min()
         max_period = df1["period"].max()
-        min_rad = df1["radius"].min()
-        max_rad = df1["radius"].max()
         phases = len(df1[df1["period"] == df1["period"].min()][df1["radius"] == df1["radius"].min()])
         phases_str = "phase" if phases == 1 else "phases"
-        bin_nums = int(np.ceil(len(df1["period"].unique()) / binning))
-        if period_grid_geom == 'lin':
-            step_period = (max_period - min_period) / (len(df1["period"].unique()) - 1)
-            step_period = step_period * binning
-            if step_period <= 0:
-                step_period = 0.1
-            period_grid = np.linspace(min_period, max_period, bin_nums)\
-                if max_period - min_period > 0 else np.full((1), min_period)
-        else:
-            period_grid = np.logspace(np.log10(min_period), np.log10(max_period), bin_nums)
-        bin_nums = int(np.ceil(len(df1["radius"].unique()) / binning))
-        if radius_grid_geom == 'lin':
-            step_radius = (max_rad - min_rad) / (len(df1["radius"].unique()) - 1)
-            step_radius = step_radius * binning
-            if step_radius <= 0:
-                step_radius = 0.1
-            radius_grid = np.round(np.linspace(min_rad, max_rad, bin_nums), 2)\
-                if max_rad - min_rad > 0 else np.full((1), min_rad)
-        else:
-            radius_grid = np.round(np.logspace(np.log10(min_rad), np.log10(max_rad), 2), bin_nums)
-        f = len(period_grid) / len(radius_grid)
+        period_grid = df1['period'].unique()
+        radius_grid = df1['radius'].unique()
         bins = [period_grid, radius_grid]
         h11, x1, y1 = np.histogram2d(df1['period'][df1['found'] == 1], df1['radius'][df1['found'] == 1], bins=bins)
         h12, x1, y1 = np.histogram2d(df1['period'][df1['found'] == 0], df1['radius'][df1['found'] == 0], bins=bins)

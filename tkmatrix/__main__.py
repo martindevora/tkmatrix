@@ -144,8 +144,7 @@ if __name__ == '__main__':
             ir.recovery_rv(inject_dir, rv['INITIAL_MASK'] if 'INITIAL_MASK' in rv else None,
                            rv['SNR_THRESHOLD'], rv['RUN_LIMIT'],
                            rv['MAX_PERIOD_SEARCH'], rv['OVERSAMPLING'] if 'OVERSAMPLING' in rv else 1)
-            ir.plot_results(target, inject_dir, period_grid, mass_grid, period_grid_geom=rv["PERIOD_GRID_GEOM"],
-                            radius_grid_geom=rv["MASS_GRID_GEOM"], is_rv=True)
+            ir.plot_results(target, inject_dir, is_rv=True)
     inject_dir, period_grid, radius_grid = ir.inject(matrix_user_properties["PHASES"],
                            matrix_user_properties["MIN_PERIOD"], matrix_user_properties["MAX_PERIOD"],
                            matrix_user_properties["STEPS_PERIOD"],
@@ -163,6 +162,5 @@ if __name__ == '__main__':
                 custom_search, matrix_user_properties["MAX_PERIOD_SEARCH"], matrix_user_properties["OVERSAMPLING"],
                 matrix_user_properties["SIGNAL_SELECTION_MODE"],
                 use_search_cache=matrix_user_properties["USE_SEARCH_CACHE"])
-    ir.plot_results(target, inject_dir, period_grid, radius_grid, period_grid_geom=matrix_user_properties["PERIOD_GRID_GEOM"],
-                    radius_grid_geom=matrix_user_properties["RADIUS_GRID_GEOM"])
+    ir.plot_results(target, inject_dir)
     print("Execution time: " + str(datetime.datetime.now() - start_time))
