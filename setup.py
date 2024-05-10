@@ -2,7 +2,7 @@ import setuptools
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
-version = "0.9.0"
+version = "0.9.1"
 setuptools.setup(
     name="tkmatrix",
     version=version,
@@ -25,7 +25,7 @@ setuptools.setup(
                         'configparser==5.0.1',
                         "corner==2.1.0",
                         "ellc==1.8.5",
-                        "lcbuilder==0.18.0",
+                        "lcbuilder==0.18.1",
                         "mock==4.0.3",
                         'pyparsing==2.4.7', # Matplotlib dependency
                         "seaborn==0.11.1",
