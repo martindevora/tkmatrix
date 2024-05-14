@@ -33,9 +33,9 @@ jeepney==0.8.0
 Jinja2==3.1.4
 joblib==1.4.2
 k2plr==0.2.9
-keyring==25.2.0
+keyring==25.2.1
 kiwisolver==1.4.5
-lcbuilder==0.18.1
+lcbuilder==0.18.2
 lightkurve==2.4.2
 llvmlite==0.41.1
 MarkupSafe==2.1.5
@@ -90,7 +90,7 @@ statsmodels==0.13.5
 sympy==1.12
 tess-point==0.6.1
 threadpoolctl==3.5.0
-tkmatrix==0.9.1
+tkmatrix==0.9.2
 tomli==2.0.1
 torch==2.1.2
 tornado==6.4
