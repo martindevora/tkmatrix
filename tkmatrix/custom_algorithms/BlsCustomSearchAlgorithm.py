@@ -49,8 +49,9 @@ class BlsCustomSearchAlgorithm(CustomSearchAlgorithm):
             duration = results.duration_at_max_power.value
             found_period = results.period_at_max_power.value
             intransit_result = transit_mask(time, found_period, 2 * duration, t0)
-            oot_flux = flux[~intransit_result]
-            snr = results.snr[max_power_index].value / np.nanstd(oot_flux)
+            real_intransit_result = transit_mask(time, found_period, duration, t0)
+            oot_flux = flux[~real_intransit_result]
+            snr = np.abs(np.nanmean(1 - real_intransit_result)) / np.nanstd(oot_flux) * (len(real_intransit_result) ** 0.5)
             if snr >= min_snr:
                 time = time[~intransit_result]
                 flux = flux[~intransit_result]
