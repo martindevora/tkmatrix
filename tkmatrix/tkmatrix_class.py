@@ -1,8 +1,11 @@
+import copy
+import dataclasses
 import logging
 import multiprocessing
 import sys
 import traceback
 from multiprocessing import Pool
+from pathlib import Path
 
 import lightkurve
 import numpy as np
@@ -12,6 +15,7 @@ from lcbuilder.helper import LcbuilderHelper
 from lcbuilder.lcbuilder_class import LcBuilder
 import wotan
 from lcbuilder.star.HabitabilityCalculator import HabitabilityCalculator
+from lcbuilder.star.starinfo import StarInfo
 from matplotlib.ticker import FormatStrFormatter
 from foldedleastsquares import transitleastsquares
 from foldedleastsquares import transit_mask, cleaned_array
@@ -25,6 +29,61 @@ from tkmatrix.custom_algorithms.BlsCustomSearchAlgorithm import BlsCustomSearchA
 from tkmatrix.inject_model import InjectModel
 from tkmatrix.inject_rv_model import InjectRvModel
 from tkmatrix.rv import RvFitter
+
+
+@dataclasses.dataclass
+class SearchInput:
+    target: str
+    sectors: list[int] | str
+    author: str
+    dir: str
+    star_info: StarInfo
+    file: str
+    initial_transit_mask: list
+    preserve: bool = False
+    exposure_time: int = None
+    initial_mask: list = None
+    eleanor_corr_flux: str = 'pca_flux'
+    outliers_sigma: float = None
+    high_rms_enabled: bool = True
+    high_rms_threshold: float = 2.5,
+    high_rms_bin_hours: float = 4
+    smooth_enabled: bool = False
+    auto_detrend_enabled: bool = False
+    auto_detrend_method: str = "cosine"
+    auto_detrend_ratio: float = 0.25,
+    auto_detrend_period: float = None
+    prepare_algorithm = None
+    cache_dir: str = os.path.expanduser('~') + "/"
+    oscillation_reduction: bool = False
+    oscillation_min_snr: float = 4
+    oscillation_amplitude_threshold: float = 0.001
+    oscillation_ws_percent: float = 0.01
+    oscillation_min_period: float = 0.002
+    oscillation_max_period: float = 0.2,
+    cores: int = multiprocessing.cpu_count() - 1
+    search_engine: str = 'cpu'
+    ab: tuple[float] = None
+    rstar = None
+    mstar = None
+    mstar_min = None
+    mstar_max = None
+    rstar_min = None
+    rstar_max = None
+    period: float = None
+    r_planet: float = None
+    epoch: float = None
+    inject_file_dir: str = None
+    use_search_cache: bool = False
+    max_period_search: float = None
+    snr_threshold: float = None
+    transit_template = None
+    detrend_method: str = 'biweight'
+    detrend_ws: float = None
+    run_limit: int = 1
+    custom_search_algorithm = None
+    oversampling: float = None
+    signal_selection_mode: str = None
 
 
 class MATRIX:
@@ -52,106 +111,83 @@ class MATRIX:
         assert sectors is not None and (sectors == 'all' or isinstance(sectors, list))
         assert exposure_time is not None and isinstance(exposure_time, (int, float))
         assert initial_transit_mask is None or isinstance(initial_transit_mask, list)
-        self.id = target
-        self.dir = dir
-        self.sectors = sectors
-        self.author = author
-        self.star_info = star_info
-        self.exposure_time = exposure_time
-        self.preserve = preserve
-        self.file = file
-        self.eleanor_corr_flux = eleanor_corr_flux
-        self.initial_mask = initial_mask
-        self.initial_transit_mask = initial_transit_mask
-        self.star_info = star_info
-        self.outliers_sigma = outliers_sigma
-        self.high_rms_enabled = high_rms_enabled
-        self.high_rms_threshold = high_rms_threshold
-        self.high_rms_bin_hours = high_rms_bin_hours
-        self.smooth_enabled = smooth_enabled
-        self.auto_detrend_enabled = auto_detrend_enabled
-        self.auto_detrend_method = auto_detrend_method
-        self.auto_detrend_ratio = auto_detrend_ratio
-        self.auto_detrend_period = auto_detrend_period
-        self.oscillation_reduction = oscillation_reduction
-        self.oscillation_min_snr = oscillation_min_snr
-        self.oscillation_amplitude_threshold = oscillation_amplitude_threshold
-        self.oscillation_ws_percent = oscillation_ws_percent
-        self.oscillation_min_period = oscillation_min_period
-        self.oscillation_max_period = oscillation_max_period
-        self.prepare_algorithm = prepare_algorithm
-        self.cache_dir = cache_dir
-        self.cores = cores
-        self.search_engine = search_engine
+        self.search_input = SearchInput(target, sectors, author, dir, star_info, file, initial_transit_mask, preserve, exposure_time, initial_mask,
+                                        eleanor_corr_flux,  outliers_sigma, high_rms_enabled, high_rms_threshold, high_rms_bin_hours, smooth_enabled,
+                                        auto_detrend_enabled, auto_detrend_method, auto_detrend_ratio, auto_detrend_period, cache_dir,
+                                        oscillation_reduction, oscillation_min_snr, oscillation_amplitude_threshold, oscillation_ws_percent,
+                                        oscillation_min_period, oscillation_max_period, cores, search_engine)
 
-    def retrieve_object_data(self, inject_dir=None):
-        self.object_info = self.lcbuilder.build_object_info(self.id, self.author, self.sectors, self.file, self.exposure_time,
-                                                       None, None,
-                                                       self.star_info, None,
-                                                       self.eleanor_corr_flux, self.outliers_sigma,
-                                                       False, self.high_rms_threshold,
-                                                       self.high_rms_bin_hours, False,
-                                                       False, self.auto_detrend_method,
-                                                       self.auto_detrend_ratio, self.auto_detrend_period,
-                                                       self.prepare_algorithm, False,
-                                                       self.oscillation_min_snr, self.oscillation_amplitude_threshold,
-                                                       self.oscillation_ws_percent, self.oscillation_min_period,
-                                                       self.oscillation_max_period)
+    @staticmethod
+    def retrieve_object_data(search_input: SearchInput, inject_dir=None):
+        lcbuilder_object = LcBuilder()
+        object_info = lcbuilder_object.build_object_info(search_input.target, search_input.author, search_input.sectors,
+                                                         search_input.file, search_input.exposure_time,
+                                                         None, None, search_input.star_info, None,
+                                                         search_input.eleanor_corr_flux, search_input.outliers_sigma,
+                                                         False, search_input.high_rms_threshold,
+                                                         search_input.high_rms_bin_hours, False,
+                                                         False, search_input.auto_detrend_method,
+                                                         search_input.auto_detrend_ratio, search_input.auto_detrend_period,
+                                                         search_input.prepare_algorithm, False,
+                                                         search_input.oscillation_min_snr, search_input.oscillation_amplitude_threshold,
+                                                         search_input.oscillation_ws_percent, search_input.oscillation_min_period,
+                                                         search_input.oscillation_max_period)
         if inject_dir is None:
-            inject_dir = self.build_inject_dir()
-        self.lc_build = self.lcbuilder.build(self.object_info, inject_dir, self.cache_dir, self.cores)
-        if self.star_info is None:
-            self.star_info = self.lc_build.star_info
-        self.ab = self.star_info.ld_coefficients
-        if self.ab is None:
+            inject_dir = MATRIX.build_inject_dir(search_input.dir, object_info)
+        lcbuilder_object = LcBuilder()
+        lc_build = lcbuilder_object.build(object_info, inject_dir, search_input.cache_dir, search_input.cores)
+        search_input_result = copy.deepcopy(search_input)
+        if search_input_result.star_info is None:
+            search_input_result.star_info = lc_build.star_info
+        search_input_result.ab = search_input_result.star_info.ld_coefficients
+        if search_input_result.ab is None:
             raise ValueError("Limb Darkening parameters were not found. Please provide them in the STAR properties.")
-        self.mass = self.star_info.mass
-        self.massmin = self.star_info.mass_min
-        self.massmax = self.star_info.mass_max
-        self.radius = self.star_info.radius
-        self.radiusmin = self.star_info.radius_min
-        self.radiusmax = self.star_info.radius_max
         # units for ellc
-        self.rstar = self.star_info.radius * u.R_sun
-        self.mstar = self.star_info.mass * u.M_sun
-        self.mstar_min = self.star_info.mass_min * u.M_sun
-        self.mstar_max = self.star_info.mass_max * u.M_sun
-        self.rstar_min = self.star_info.radius_min * u.R_sun
-        self.rstar_max = self.star_info.radius_max * u.R_sun
-        return inject_dir
+        search_input_result.rstar = search_input_result.star_info.radius * u.R_sun
+        search_input_result.mstar = search_input_result.star_info.mass * u.M_sun
+        search_input_result.mstar_min = search_input_result.star_info.mass_min * u.M_sun
+        search_input_result.mstar_max = search_input_result.star_info.mass_max * u.M_sun
+        search_input_result.rstar_min = search_input_result.star_info.radius_min * u.R_sun
+        search_input_result.rstar_max = search_input_result.star_info.radius_max * u.R_sun
+        return inject_dir, object_info, lc_build, search_input_result
 
-    def retrieve_object_data_for_recovery(self, inject_dir, recovery_file):
-        self.__setup_logging(inject_dir)
-        self.object_info = self.lcbuilder.build_object_info("", None, None, recovery_file, self.exposure_time,
-                                                       self.initial_mask, self.initial_transit_mask,
-                                                       self.star_info, None,
-                                                       self.eleanor_corr_flux, self.outliers_sigma,
-                                                       self.high_rms_enabled, self.high_rms_threshold,
-                                                       self.high_rms_bin_hours, self.smooth_enabled,
-                                                       self.auto_detrend_enabled, self.auto_detrend_method,
-                                                       self.auto_detrend_ratio, self.auto_detrend_period,
-                                                       self.prepare_algorithm, self.oscillation_reduction,
-                                                       self.oscillation_min_snr, self.oscillation_amplitude_threshold,
-                                                       self.oscillation_ws_percent, self.oscillation_min_period,
-                                                       self.oscillation_max_period)
+    @staticmethod
+    def retrieve_object_data_for_recovery(inject_dir, recovery_file, search_input: SearchInput):
+        MATRIX.setup_logging(inject_dir)
+        lcbuilder_object = LcBuilder()
+        object_info = lcbuilder_object.build_object_info("", None, None, recovery_file, search_input.exposure_time,
+                                                       search_input.initial_mask, search_input.initial_transit_mask,
+                                                       search_input.star_info, None,
+                                                       search_input.eleanor_corr_flux, search_input.outliers_sigma,
+                                                       search_input.high_rms_enabled, search_input.high_rms_threshold,
+                                                       search_input.high_rms_bin_hours, search_input.smooth_enabled,
+                                                       search_input.auto_detrend_enabled, search_input.auto_detrend_method,
+                                                       search_input.auto_detrend_ratio, search_input.auto_detrend_period,
+                                                       search_input.prepare_algorithm, search_input.oscillation_reduction,
+                                                       search_input.oscillation_min_snr, search_input.oscillation_amplitude_threshold,
+                                                       search_input.oscillation_ws_percent, search_input.oscillation_min_period,
+                                                       search_input.oscillation_max_period)
 
-        if self.object_info.reduce_simple_oscillations and \
-                self.object_info.oscillation_max_period < self.object_info.oscillation_min_period:
+        if object_info.reduce_simple_oscillations and \
+                object_info.oscillation_max_period < object_info.oscillation_min_period:
             logging.info("Stellar oscillation period has been set to empty. Defaulting to 1/3 the minimum search period")
-            self.object_info.oscillation_max_period = self.MIN_SEARCH_PERIOD / 3
-        self.lc_build = self.lcbuilder.build(self.object_info, inject_dir, self.cache_dir, self.cores)
+            object_info.oscillation_max_period = MATRIX.MIN_SEARCH_PERIOD / 3
+        lc_build = lcbuilder_object.build(object_info, inject_dir, search_input.cache_dir, search_input.cores)
+        return lc_build, object_info
 
-    def build_inject_dir(self):
-        inject_dir = self.dir + "/" + self.object_info.mission_id().replace(" ", "") + "_ir/"
+    @staticmethod
+    def build_inject_dir(dir, object_info):
+        inject_dir = dir + "/" + object_info.mission_id().replace(" ", "") + "_ir/"
         index = 0
         while os.path.exists(inject_dir) or os.path.isdir(inject_dir):
-            inject_dir = self.dir + "/" + self.object_info.mission_id().replace(" ", "") + "_ir_" + str(index) + "/"
+            inject_dir = dir + "/" + object_info.mission_id().replace(" ", "") + "_ir_" + str(index) + "/"
             index = index + 1
         os.mkdir(inject_dir)
-        self.__setup_logging(inject_dir)
+        MATRIX.setup_logging(inject_dir)
         return inject_dir
 
-    def __setup_logging(self, inject_dir):
+    @staticmethod
+    def setup_logging(inject_dir):
         file_dir = inject_dir + "matrix.log"
         formatter = logging.Formatter('%(message)s')
         logger = logging.getLogger()
@@ -208,12 +244,13 @@ class MATRIX:
             assert max_mass >= min_mass
             mass_grid = np.linspace(min_mass, max_mass, steps_mass) if mass_grid_geom == "lin" \
                 else np.logspace(np.log10(min_mass), np.log10(max_mass), steps_period)
-        inject_dir = inject_dir if inject_dir is not None else self.retrieve_object_data()
+        if inject_dir is None:
+            inject_dir, object_info, lc_build, self.search_input = MATRIX.retrieve_object_data(self.search_input)
         habitability_calculator = HabitabilityCalculator()
-        semimajor_axis = HabitabilityCalculator().calculate_semi_major_axis(min_period, self.mstar.value)
-        rstar_au = self.rstar.to(u.au).value
+        semimajor_axis = HabitabilityCalculator().calculate_semi_major_axis(min_period, self.search_input.mstar.value)
+        rstar_au = self.search_input.rstar.to(u.au).value
         if rstar_au / semimajor_axis >= 1:
-            period_for_rstar = habitability_calculator.au_to_period(self.mstar.value, rstar_au)
+            period_for_rstar = habitability_calculator.au_to_period(self.search_input.mstar.value, rstar_au)
             raise ValueError(
                 "Your minimum period is in a shorter orbit than the star radius. The minimum period for this star should be > " + str(
                     round(period_for_rstar, 2)) + ' days')
@@ -227,9 +264,9 @@ class MATRIX:
             for t0 in np.linspace(time[0], time[0] + period, phases + 2)[1:-1]:
                 for mplanet in mass_grid:
                     mplanet = np.around(mplanet, decimals=2) * u.M_earth
-                    inject_models.append(InjectRvModel(inject_dir, time, rv, rv_err, self.rstar, self.mstar, t0,
+                    inject_models.append(InjectRvModel(inject_dir, time, rv, rv_err, self.search_input.rstar, self.search_input.mstar, t0,
                                                        period, mplanet))
-        with Pool(processes=self.cores) as pool:
+        with Pool(processes=self.search_input.cores) as pool:
             pool.map(InjectRvModel.make_model, inject_models)
         return inject_dir, period_grid, mass_grid
 
@@ -270,41 +307,42 @@ class MATRIX:
             assert max_radius >= min_radius
             radius_grid = np.linspace(min_radius, max_radius, steps_radius) if radius_grid_geom == "lin" \
                 else np.logspace(np.log10(min_radius), np.log10(max_radius), steps_period)
-        inject_dir = inject_dir if inject_dir is not None else self.retrieve_object_data()
+        if inject_dir is None:
+            inject_dir, self.object_info, lc_build, self.search_input = MATRIX.retrieve_object_data(self.search_input)
         habitability_calculator = HabitabilityCalculator()
-        semimajor_axis = HabitabilityCalculator().calculate_semi_major_axis(min_period, self.mstar.value)
-        rstar_au = self.rstar.to(u.au).value
+        semimajor_axis = HabitabilityCalculator().calculate_semi_major_axis(min_period, self.search_input.mstar.value)
+        rstar_au = self.search_input.rstar.to(u.au).value
         if rstar_au / semimajor_axis >= 1:
-            period_for_rstar = habitability_calculator.au_to_period(self.mstar.value, rstar_au)
+            period_for_rstar = habitability_calculator.au_to_period(self.search_input.mstar.value, rstar_au)
             raise ValueError(
                 "Your minimum period is in a shorter orbit than the star radius. The minimum period for this star should be > " + str(
                     round(period_for_rstar, 2)) + ' days')
-        flux0 = self.lc_build.lc.flux.value
-        time = self.lc_build.lc.time.value
-        flux_err = self.lc_build.lc.flux_err.value
+        flux0 = lc_build.lc.flux.value
+        time = lc_build.lc.time.value
+        flux_err = lc_build.lc.flux_err.value
         inject_models = []
         for period in period_grid:
             for t0 in np.linspace(time[0], time[0] + period, phases + 2)[1:-1]:
                 for rplanet in radius_grid:
                     rplanet = np.around(rplanet, decimals=2) * u.R_earth
-                    inject_models.append(InjectModel(inject_dir, time, np.array(flux0), np.array(flux_err), self.rstar, self.mstar, t0,
-                                                     period, rplanet, self.exposure_time, self.ab))
-        with Pool(processes=self.cores) as pool:
+                    inject_models.append(InjectModel(inject_dir, time, np.array(flux0), np.array(flux_err), self.search_input.rstar, self.search_input.mstar, t0,
+                                                     period, rplanet, self.search_input.exposure_time, self.search_input.ab))
+        with Pool(processes=self.search_input.cores) as pool:
             pool.map(InjectModel.make_model, inject_models)
         return inject_dir, period_grid, radius_grid
 
     def recovery_rv_periods(self, filename, max_period_search, rv_masks=None, oversampling=1,
                             cores=os.cpu_count() - 1):
-        inject_dir = self.retrieve_object_data()
+        inject_dir = MATRIX.retrieve_object_data(self.search_input)
         if rv_masks is None:
             rv_masks = {}
         rv_df = pd.read_csv(filename)
         rv_df = rv_df.dropna()
         rv_df = rv_df.sort_values(by=['bjd'], ascending=True)
-        period_grid_size = int((max_period_search - self.MIN_SEARCH_PERIOD) * 100 * oversampling)
+        period_grid_size = int((max_period_search - MATRIX.MIN_SEARCH_PERIOD) * 100 * oversampling)
         rv_data, period_grid, k_grid, omega_grid, msin_grid, least_squares_grid, argmax_sde, power, snr, SDE = \
             RvFitter.recover_periods(rv_df, period_grid_geom='log', steps_period=period_grid_size, period_min=0.5,
-                                     max_period=max_period_search, rv_masks=rv_masks, star_mass=self.star_info.mass,
+                                     max_period=max_period_search, rv_masks=rv_masks, star_mass=self.search_input.star_info.mass,
                                      cpus=cores)
         positive_power_mask = power > np.percentile(power, 1)
         power = np.array(power)[positive_power_mask]
@@ -412,74 +450,174 @@ class MATRIX:
             transit_template = 'default'
         elif transit_template == 'bls':
             transit_template = 'box'
+        self.search_input.use_search_cache = use_search_cache
+        self.search_input.snr_threshold = snr_threshold
+        self.search_input.detrend_method = detrend_method
+        self.search_input.detrend_ws = detrend_ws
+        self.search_input.run_limit = run_limit
+        self.search_input.oversampling = oversampling
+        self.search_input.custom_search_algorithm = custom_search_algorithm
+        self.search_input.max_period_search = max_period_search
+        self.search_input.transit_template = transit_template
+        self.search_input.signal_selection_mode = signal_selection_mode
+        self.search_input.use_search_cache = use_search_cache
         reports_df = pd.DataFrame(columns=['period', 'radius', 'epoch', 'duration_found', 'period_found', 'epoch_found',
                                            'found', 'snr', 'sde', 'run'])
         run_reports_df = pd.DataFrame(columns=['period', 'radius', 'epoch', 'duration_found', 'period_found', 'epoch_found',
                                            'found', 'snr', 'sde', 'run'])
-        for file in sorted(os.listdir(inject_dir)):
-            file_name_matches = re.search("P([0-9]+\\.*[0-9]*)+_R([0-9]+\\.*[0-9]*)_T([0-9]+\\.*[0-9]*)\\.csv", file)
-            if file_name_matches is not None:
-                try:
-                    period = float(file_name_matches[1])
-                    r_planet = float(file_name_matches[2])
-                    epoch = float(file_name_matches[3])
-                    df = pd.read_csv(inject_dir + file, float_precision='round_trip', sep=',',
-                                     usecols=['#time', 'flux', 'flux_err'])
-                    if len(df) == 0:
-                        founds = [True]
-                        snrs = [20]
-                        sdes = [self.SDE_ROCHE]
-                        runs = [1]
-                        durations_found = [20]
-                        epochs_found = [0]
-                        periods_found = [0]
-                    else:
-                        found_entries = reports_df.loc[(reports_df['period'] == period) &
-                                                       (reports_df['epoch'] == epoch) &
-                                                       (reports_df['radius'] <= r_planet) &
-                                                       (reports_df['found'] == True)]
-                        if not use_search_cache or len(found_entries) == 0:
-                            self.retrieve_object_data_for_recovery(inject_dir + "/", inject_dir + file)
-                            founds, snrs, sdes, runs, durations_found, periods_found, epochs_found = \
-                                self.__search(self.lc_build.lc.time.value, self.lc_build.lc.flux.value, self.radius,
-                                              self.radiusmin, self.radiusmax, self.mass, self.massmin,
-                                              self.massmax, self.ab, epoch, period, self.MIN_SEARCH_PERIOD,
-                                              max_period_search, snr_threshold,
-                                              transit_template, detrend_method, detrend_ws,
-                                              self.lc_build.transits_min_count, run_limit, custom_search_algorithm,
-                                              oversampling, signal_selection_mode)
-                        else:
+        m = multiprocessing.Manager()
+        lock = m.Lock()
+        if transit_template == 'bls-periodogram':
+            search_inputs: list = []
+            reports_df.to_csv(inject_dir + '/a_tls_report.csv', index=False)
+            run_reports_df.to_csv(inject_dir + '/a_tls_report_per_run.csv', index=False)
+            for file in sorted(os.listdir(inject_dir)):
+                file_name_matches = re.search("P([0-9]+\\.*[0-9]*)+_R([0-9]+\\.*[0-9]*)_T([0-9]+\\.*[0-9]*)\\.csv", file)
+                if file_name_matches is not None:
+                    search_input = copy.deepcopy(self.search_input)
+                    search_input.period = float(file_name_matches[1])
+                    search_input.r_planet = float(file_name_matches[2])
+                    search_input.epoch = float(file_name_matches[3])
+                    search_input.inject_file_dir = inject_dir + file
+                    search_input.dir = inject_dir
+                    search_inputs = search_inputs + [search_input]
+            with Pool(processes=self.search_input.cores) as pool:
+                pool.starmap(MATRIX.recover_period, [(search_input, lock) for search_input in search_inputs])
+        else:
+            search_input = self.search_input
+            for file in sorted(os.listdir(inject_dir)):
+                file_name_matches = re.search("P([0-9]+\\.*[0-9]*)+_R([0-9]+\\.*[0-9]*)_T([0-9]+\\.*[0-9]*)\\.csv", file)
+                if file_name_matches is not None:
+                    try:
+                        period = float(file_name_matches[1])
+                        r_planet = float(file_name_matches[2])
+                        epoch = float(file_name_matches[3])
+                        df = pd.read_csv(inject_dir + file, float_precision='round_trip', sep=',', usecols=['#time', 'flux', 'flux_err'])
+                        if len(df) == 0:
                             founds = [True]
-                            snrs = [float(str(found_entries.iloc[0]['snr']).split(',')[-1])]
-                            sdes = [float(str(found_entries.iloc[0]['sde']).split(',')[-1])]
-                            runs = [int(str(found_entries.iloc[0]['run']).split(',')[-1])]
-                            durations_found = [float(str(found_entries.iloc[0]['duration_found']).split(',')[-1])]
-                            periods_found = [float(str(found_entries.iloc[0]['period_found']).split(',')[-1])]
-                            epochs_found = [float(str(found_entries.iloc[0]['epoch_found']).split(',')[-1])]
-                    new_report = {"period": period, "radius": r_planet, "epoch": epoch,
-                                  "found": founds[-1], "snr": ','.join([str(i) for i in snrs]),
-                                  "sde": ','.join([str(i) for i in sdes]), "run": ','.join([str(i) for i in runs]),
-                                  "duration_found": ','.join([str(i) for i in durations_found]),
-                                  "period_found": ','.join([str(i) for i in periods_found]),
-                                  "epoch_found": ','.join([str(i) for i in epochs_found])}
-                    reports_df = reports_df.append(new_report, ignore_index=True)
-                    for i in np.arange(0, len(founds)):
-                        run_reports_df = run_reports_df.append(
-                            {"period": period, "radius": r_planet, "epoch": epoch, "found": founds[i], "snr": snrs[i],
-                                  "sde": sdes[i], "run": runs[i], "duration_found": durations_found[i],
-                                  "period_found": periods_found[i], "epoch_found": epochs_found[i]}, ignore_index=True)
-                    print("P=" + str(period) + ", R=" + str(r_planet) + ", T0=" + str(epoch) + ", FOUND WAS " + str(
-                        founds[-1]) +
-                          " WITH SNRs " + str(snrs) + " AND SDEs " + str(sdes))
-                    reports_df = reports_df.sort_values(['period', 'radius', 'epoch'], ascending=[True, True, True])
-                    run_reports_df = run_reports_df.sort_values(['period', 'radius', 'epoch', 'run'],
-                                                            ascending=[True, True, True, True])
-                    reports_df.to_csv(inject_dir + "a_tls_report.csv", index=False)
-                    run_reports_df.to_csv(inject_dir + "a_tls_report_per_run.csv", index=False)
-                except Exception as e:
-                    traceback.print_exc()
-                    print("File not valid: " + file)
+                            snrs = [20]
+                            sdes = [MATRIX.SDE_ROCHE]
+                            runs = [1]
+                            durations_found = [20]
+                            epochs_found = [0]
+                            periods_found = [0]
+                        else:
+                            found_entries = reports_df.loc[(reports_df['period'] == period) &
+                                                           (reports_df['epoch'] == epoch) &
+                                                           (reports_df['radius'] <= r_planet) &
+                                                           (reports_df['found'] == True)]
+                            if not use_search_cache or len(found_entries) == 0:
+                                lc_build, object_info = MATRIX.retrieve_object_data_for_recovery(inject_dir + "/", inject_dir + file)
+                                founds, snrs, sdes, runs, durations_found, periods_found, epochs_found = \
+                                    MATRIX.search(lc_build.lc.time.value, lc_build.lc.flux.value, search_input.star_info.radius,
+                                                  search_input.star_info.radius_min, search_input.star_info.radius_max,
+                                                  search_input.star_info.mass, search_input.star_info.mass_min, search_input.star_info.mass_max,
+                                                  search_input.ab, epoch, period, MATRIX.MIN_SEARCH_PERIOD, max_period_search, snr_threshold,
+                                                  transit_template, detrend_method, detrend_ws, lc_build.transits_min_count, run_limit,
+                                                  custom_search_algorithm, oversampling, signal_selection_mode, search_input.star_info,
+                                                  search_input.cores, search_input.search_engine)
+                            else:
+                                founds = [True]
+                                snrs = [float(str(found_entries.iloc[0]['snr']).split(',')[-1])]
+                                sdes = [float(str(found_entries.iloc[0]['sde']).split(',')[-1])]
+                                runs = [int(str(found_entries.iloc[0]['run']).split(',')[-1])]
+                                durations_found = [float(str(found_entries.iloc[0]['duration_found']).split(',')[-1])]
+                                periods_found = [float(str(found_entries.iloc[0]['period_found']).split(',')[-1])]
+                                epochs_found = [float(str(found_entries.iloc[0]['epoch_found']).split(',')[-1])]
+                        new_report = {"period": period, "radius": r_planet, "epoch": epoch,
+                                      "found": founds[-1], "snr": ','.join([str(i) for i in snrs]),
+                                      "sde": ','.join([str(i) for i in sdes]), "run": ','.join([str(i) for i in runs]),
+                                      "duration_found": ','.join([str(i) for i in durations_found]),
+                                      "period_found": ','.join([str(i) for i in periods_found]),
+                                      "epoch_found": ','.join([str(i) for i in epochs_found])}
+                        reports_df = reports_df.append(new_report, ignore_index=True)
+                        for i in np.arange(0, len(founds)):
+                            run_reports_df = run_reports_df.append(
+                                {"period": period, "radius": r_planet, "epoch": epoch, "found": founds[i], "snr": snrs[i],
+                                      "sde": sdes[i], "run": runs[i], "duration_found": durations_found[i],
+                                      "period_found": periods_found[i], "epoch_found": epochs_found[i]}, ignore_index=True)
+                        print("P=" + str(period) + ", R=" + str(r_planet) + ", T0=" + str(epoch) + ", FOUND WAS " + str(
+                            founds[-1]) +
+                              " WITH SNRs " + str(snrs) + " AND SDEs " + str(sdes))
+                        reports_df = reports_df.sort_values(['period', 'radius', 'epoch'], ascending=[True, True, True])
+                        run_reports_df = run_reports_df.sort_values(['period', 'radius', 'epoch', 'run'],
+                                                                ascending=[True, True, True, True])
+                        reports_df.to_csv(inject_dir + "a_tls_report.csv", index=False)
+                        run_reports_df.to_csv(inject_dir + "a_tls_report_per_run.csv", index=False)
+                    except Exception as e:
+                        traceback.print_exc()
+                        print("File not valid: " + file)
         self.remove_non_results_files(inject_dir)
+
+    @staticmethod
+    def recover_period(search_input: SearchInput, lock):
+        try:
+            df = pd.read_csv(search_input.inject_file_dir, float_precision='round_trip', sep=',',
+                             usecols=['#time', 'flux', 'flux_err'])
+            if len(df) == 0:
+                founds = [True]
+                snrs = [20]
+                sdes = [MATRIX.SDE_ROCHE]
+                runs = [1]
+                durations_found = [20]
+                epochs_found = [0]
+                periods_found = [0]
+            else:
+                with lock:
+                    reports_df = pd.read_csv(search_input.dir + "a_tls_report.csv")
+                    run_reports_df = pd.read_csv(search_input.dir + "a_tls_report_per_run.csv")
+                found_entries = reports_df.loc[(reports_df['period'] == search_input.period) &
+                                               (reports_df['epoch'] == search_input.epoch) &
+                                               (reports_df['radius'] <= search_input.r_planet) &
+                                               (reports_df['found'] == True)]
+                if not search_input.use_search_cache or len(found_entries) == 0:
+                    lc_build, object_info = MATRIX.retrieve_object_data_for_recovery(search_input.dir + "/",
+                                                                                     search_input.inject_file_dir, search_input)
+                    founds, snrs, sdes, runs, durations_found, periods_found, epochs_found = \
+                        MATRIX.search(lc_build.lc.time.value, lc_build.lc.flux.value, search_input.star_info.radius,
+                                      search_input.star_info.radius_min, search_input.star_info.radius_max,
+                                      search_input.star_info.mass, search_input.star_info.mass_min,
+                                      search_input.star_info.mass_max,
+                                      search_input.ab, search_input.epoch, search_input.period, MATRIX.MIN_SEARCH_PERIOD,
+                                      search_input.max_period_search, search_input.snr_threshold, search_input.transit_template,
+                                      search_input.detrend_method, search_input.detrend_ws, lc_build.transits_min_count,
+                                      search_input.run_limit, search_input.custom_search_algorithm, search_input.oversampling,
+                                      search_input.signal_selection_mode, search_input.star_info, search_input.cores,
+                                      search_input.search_engine)
+                else:
+                    founds = [True]
+                    snrs = [float(str(found_entries.iloc[0]['snr']).split(',')[-1])]
+                    sdes = [float(str(found_entries.iloc[0]['sde']).split(',')[-1])]
+                    runs = [int(str(found_entries.iloc[0]['run']).split(',')[-1])]
+                    durations_found = [float(str(found_entries.iloc[0]['duration_found']).split(',')[-1])]
+                    periods_found = [float(str(found_entries.iloc[0]['period_found']).split(',')[-1])]
+                    epochs_found = [float(str(found_entries.iloc[0]['epoch_found']).split(',')[-1])]
+            new_report = {"period": search_input.period, "radius": search_input.r_planet, "epoch": search_input.epoch,
+                          "found": founds[-1], "snr": ','.join([str(i) for i in snrs]),
+                          "sde": ','.join([str(i) for i in sdes]), "run": ','.join([str(i) for i in runs]),
+                          "duration_found": ','.join([str(i) for i in durations_found]),
+                          "period_found": ','.join([str(i) for i in periods_found]),
+                          "epoch_found": ','.join([str(i) for i in epochs_found])}
+            with lock:
+                reports_df = pd.read_csv(search_input.dir + "a_tls_report.csv")
+                run_reports_df = pd.read_csv(search_input.dir + "a_tls_report_per_run.csv")
+                reports_df = reports_df.append(new_report, ignore_index=True)
+                for i in np.arange(0, len(founds)):
+                    run_reports_df = run_reports_df.append(
+                        {"period": search_input.period, "radius": search_input.r_planet, "epoch": search_input.epoch, "found": founds[i], "snr": snrs[i],
+                         "sde": sdes[i], "run": runs[i], "duration_found": durations_found[i],
+                         "period_found": periods_found[i], "epoch_found": epochs_found[i]}, ignore_index=True)
+                print("P=" + str(search_input.period) + ", R=" + str(search_input.r_planet) + ", T0=" + str(search_input.epoch) + ", FOUND WAS " + str(
+                    founds[-1]) +
+                      " WITH SNRs " + str(snrs) + " AND SDEs " + str(sdes))
+                reports_df = reports_df.sort_values(['period', 'radius', 'epoch'], ascending=[True, True, True])
+                run_reports_df = run_reports_df.sort_values(['period', 'radius', 'epoch', 'run'],
+                                                            ascending=[True, True, True, True])
+                reports_df.to_csv(search_input.dir + "a_tls_report.csv", index=False)
+                run_reports_df.to_csv(search_input.dir + "a_tls_report_per_run.csv", index=False)
+        except Exception as e:
+            traceback.print_exc()
+            print("File not valid: " + search_input.inject_file_dir)
 
     def remove_non_results_files(self, inject_dir):
         """
@@ -491,7 +629,7 @@ class MATRIX:
         for file in os.listdir(inject_dir):
             if "rv_thresholds" not in file and "inj-rec" not in file and file.endswith(".png"):
                 os.remove(inject_dir + file)
-        if not self.preserve:
+        if not self.search_input.preserve:
             for file in os.listdir(inject_dir):
                 if file.endswith(".csv") and (file.startswith("P") or file.startswith("RV_P")):
                     os.remove(inject_dir + file)
@@ -608,42 +746,44 @@ class MATRIX:
         plt.savefig(output_dir + '/inj-rec-diff.png', bbox_inches='tight', dpi=200)
         plt.close()
 
-    def __search(self, time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max, ab, epoch,
-                 period, min_period, max_period, min_snr, transit_template, detrend_method, ws, transits_min_count,
-                 run_limit, custom_search_algorithm, oversampling, signal_selection_mode):
+    @staticmethod
+    def search(time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max, ab, epoch,
+               period, min_period, max_period, min_snr, transit_template, detrend_method, ws, transits_min_count,
+               run_limit, custom_search_algorithm, oversampling, signal_selection_mode, star_info, cores, search_engine):
         tls_period_grid, oversampling = LcbuilderHelper.calculate_period_grid(time, min_period, max_period,
-                                                                              oversampling, self.star_info,
+                                                                              oversampling, star_info,
                                                                               transits_min_count)
         if custom_search_algorithm is not None:
             return custom_search_algorithm.search(time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max,
-                                                ab, epoch, period, min_period, max_period, min_snr, self.cores,
+                                                ab, epoch, period, min_period, max_period, min_snr, cores,
                                                 transit_template, detrend_method, ws, transits_min_count,
                                                   signal_selection_mode, run_limit)
         elif transit_template == 'bls-periodogram':
             return BlsCustomSearchAlgorithm()\
                     .search(time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max,
-                            ab, epoch, period, min_period, max_period, min_snr, self.cores,
+                            ab, epoch, period, min_period, max_period, min_snr, cores,
                             transit_template, detrend_method, ws, transits_min_count,
                             signal_selection_mode, run_limit, oversampling)
         else:
-            return self.__tls_search(time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max, ab, epoch,
-                                     period, min_period, max_period, min_snr, self.cores, transit_template,
+            return MATRIX.tls_search(time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max, ab, epoch,
+                                     period, min_period, max_period, min_snr, cores, transit_template,
                                      detrend_method, ws, transits_min_count, run_limit, tls_period_grid,
-                                     signal_selection_mode)
+                                     signal_selection_mode, search_engine)
 
-    def __tls_search(self, time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max, ab, epoch,
+    @staticmethod
+    def tls_search(time, flux, rstar, rstar_min, rstar_max, mass, mstar_min, mstar_max, ab, epoch,
                      period, min_period, max_period, min_snr, cores, transit_template, detrend_method, ws,
-                     transits_min_count, run_limit, tls_period_grid, signal_selection_mode):
+                     transits_min_count, run_limit, tls_period_grid, signal_selection_mode, search_engine):
         snr = 1e12
         found_signal = False
         time, flux = cleaned_array(time, flux)
         run = 0
         if ws > 0:
-            if detrend_method == self.DETREND_BIWEIGHT:
+            if detrend_method == MATRIX.DETREND_BIWEIGHT:
                 flux = wotan.flatten(time, flux, window_length=ws, return_trend=False, method=detrend_method,
                                      break_tolerance=0.5)
-            elif detrend_method == self.DETREND_GP:
-                flux = wotan.flatten(time, flux, method=self.DETREND_GP, kernel='matern', kernel_size=ws,
+            elif detrend_method == MATRIX.DETREND_GP:
+                flux = wotan.flatten(time, flux, method=MATRIX.DETREND_GP, kernel='matern', kernel_size=ws,
                                      return_trend=False, break_tolerance=0.5)
         found_signals = []
         snrs = []
@@ -669,8 +809,8 @@ class MATRIX:
                                   use_threads=cores,
                                   transit_template=transit_template,
                                   period_grid=tls_period_grid,
-                                  use_gpu=self.search_engine == 'gpu' or self.search_engine == 'gpu_approximate',
-                                  gpu_approximate=self.search_engine == 'gpu_approximate'
+                                  use_gpu=search_engine == 'gpu' or search_engine == 'gpu_approximate',
+                                  gpu_approximate=search_engine == 'gpu_approximate'
                                   )
             snr = results.snr
             if results.snr >= min_snr:
