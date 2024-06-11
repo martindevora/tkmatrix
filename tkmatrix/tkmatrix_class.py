@@ -507,7 +507,7 @@ class MATRIX:
                                                            (reports_df['radius'] <= r_planet) &
                                                            (reports_df['found'] == True)]
                             if not use_search_cache or len(found_entries) == 0:
-                                lc_build, object_info = MATRIX.retrieve_object_data_for_recovery(inject_dir + "/", inject_dir + file)
+                                lc_build, object_info = MATRIX.retrieve_object_data_for_recovery(inject_dir + "/", inject_dir + file, search_input)
                                 founds, snrs, sdes, runs, durations_found, periods_found, epochs_found = \
                                     MATRIX.search(lc_build.lc.time.value, lc_build.lc.flux.value, search_input.star_info.radius,
                                                   search_input.star_info.radius_min, search_input.star_info.radius_max,
