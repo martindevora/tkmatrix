@@ -160,7 +160,7 @@ if __name__ == '__main__':
                 matrix_user_properties["DETREND_METHOD"],
                 matrix_user_properties["DETREND_WS"], matrix_user_properties["FIT_METHOD"],
                 matrix_user_properties["RUN_LIMIT"],
-                custom_search, matrix_user_properties["MAX_PERIOD_SEARCH"], matrix_user_properties["OVERSAMPLING"],
+                custom_search, matrix_user_properties["MIN_PERIOD_SEARCH"], matrix_user_properties["MAX_PERIOD_SEARCH"], matrix_user_properties["OVERSAMPLING"],
                 matrix_user_properties["SIGNAL_SELECTION_MODE"],
                 use_search_cache=matrix_user_properties["USE_SEARCH_CACHE"])
     ir.plot_results(target, inject_dir, planets_df=planets_df)

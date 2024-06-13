@@ -76,6 +76,7 @@ class SearchInput:
     inject_file_dir: str = None
     use_search_cache: bool = False
     max_period_search: float = None
+    min_period_search: float = None
     snr_threshold: float = None
     transit_template = None
     detrend_method: str = 'biweight'
@@ -424,7 +425,7 @@ class MATRIX:
         self.remove_non_results_files(inject_dir)
 
     def recovery(self, inject_dir, snr_threshold=5, detrend_method=DETREND_BIWEIGHT, detrend_ws=0,
-                 transit_template='tls', run_limit=5, custom_search_algorithm=None, max_period_search=25,
+                 transit_template='tls', run_limit=5, custom_search_algorithm=None, min_period_search=0.5, max_period_search=25,
                  oversampling=3, signal_selection_mode='period-epoch', use_search_cache=False):
         """
         Given the injection dir, it will iterate over all the csvs matching light curves and try the recovery of their
@@ -437,6 +438,7 @@ class MATRIX:
         :param transit_template: whether to use tls or bls
         :param run_limit: the number of iterations to break the search if the period and epoch are not found yet
         :param custom_search_algorithm: the user-provided search algorithm if any
+        :param min_period_search: lower limit for the period search
         :param max_period_search: upper limit for the period search
         :param oversampling: the oversampling of the search period grid
         :param use_search_cache: whether already found planets for given period should be looked to avoid searches of
@@ -458,6 +460,7 @@ class MATRIX:
         self.search_input.oversampling = oversampling
         self.search_input.custom_search_algorithm = custom_search_algorithm
         self.search_input.max_period_search = max_period_search
+        self.search_input.min_period_search = max_period_search
         self.search_input.transit_template = transit_template
         self.search_input.signal_selection_mode = signal_selection_mode
         self.search_input.use_search_cache = use_search_cache
@@ -512,7 +515,7 @@ class MATRIX:
                                     MATRIX.search(lc_build.lc.time.value, lc_build.lc.flux.value, search_input.star_info.radius,
                                                   search_input.star_info.radius_min, search_input.star_info.radius_max,
                                                   search_input.star_info.mass, search_input.star_info.mass_min, search_input.star_info.mass_max,
-                                                  search_input.ab, epoch, period, MATRIX.MIN_SEARCH_PERIOD, max_period_search, snr_threshold,
+                                                  search_input.ab, epoch, period, min_period_search, max_period_search, snr_threshold,
                                                   transit_template, detrend_method, detrend_ws, lc_build.transits_min_count, run_limit,
                                                   custom_search_algorithm, oversampling, signal_selection_mode, search_input.star_info,
                                                   search_input.cores, search_input.search_engine)
@@ -578,7 +581,7 @@ class MATRIX:
                                       search_input.star_info.radius_min, search_input.star_info.radius_max,
                                       search_input.star_info.mass, search_input.star_info.mass_min,
                                       search_input.star_info.mass_max,
-                                      search_input.ab, search_input.epoch, search_input.period, MATRIX.MIN_SEARCH_PERIOD,
+                                      search_input.ab, search_input.epoch, search_input.period, search_input.min_period_search,
                                       search_input.max_period_search, search_input.snr_threshold, search_input.transit_template,
                                       search_input.detrend_method, search_input.detrend_ws, lc_build.transits_min_count,
                                       search_input.run_limit, search_input.custom_search_algorithm, search_input.oversampling,
