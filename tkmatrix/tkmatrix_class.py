@@ -635,6 +635,22 @@ class MATRIX:
                     os.remove(inject_dir + file)
 
     @staticmethod
+    def transit_mask_to_df(initial_transits_mask):
+        planets_df = pd.DataFrame(columns=["name", "radius", "period", "radius_err_up", "radius_err_bottom", "mass", "mass_err_up", "mass_err_bottom"])
+        if initial_transits_mask is not None:
+            for initial_transit_mask in initial_transits_mask:
+                planets_df = pd.concat([planets_df, pd.DataFrame.from_dict({"name": [initial_transit_mask['NAME'] if 'NAME' in initial_transit_mask else ""],
+                                                                  "period": [initial_transit_mask['P'] if 'P' in initial_transit_mask else ""],
+                                                                  "radius": [initial_transit_mask['R'] if 'R' in initial_transit_mask else ""],
+                                                                  "radius_err_up": [initial_transit_mask['R_UP_ERR'] if 'R_UP_ERR' in initial_transit_mask else ""],
+                                                                  "radius_err_bottom": [initial_transit_mask['R_LOW_ERR'] if 'R_LOW_ERR' in initial_transit_mask else ""],
+                                                                  "mass": [initial_transit_mask['M'] if 'M' in initial_transit_mask else ""],
+                                                                  "mass_err_up": [initial_transit_mask['M_UP_ERR'] if 'M_UP_ERR' in initial_transit_mask else ""],
+                                                                  "mass_err_bottom": [initial_transit_mask['M_LOW_ERR'] if 'M_LOW_ERR' in initial_transit_mask else ""]}, orient="columns")],
+                                       ignore_index=True)
+        return planets_df
+
+    @staticmethod
     def plot_results(object_id, inject_dir, binning=1, xticks=None, yticks=None, is_rv=False, planets_df=None):
         """
         Generates a heat map with the found/not found results for the period/radius grids
